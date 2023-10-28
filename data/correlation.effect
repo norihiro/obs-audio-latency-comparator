@@ -1,0 +1,55 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform int range;
+
+sampler_state def_sampler {
+	Filter   = Point;
+	AddressU = Repeat;
+	AddressV = Clamp;
+};
+
+struct VertInOut {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertInOut VSDefault(VertInOut vert_in)
+{
+	VertInOut vert_out;
+	vert_out.pos = mul(float4(vert_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = vert_in.uv;
+	return vert_out;
+}
+
+float4 PSDrawCorrelation(VertInOut vert_in) : TARGET
+{
+	int i = int(vert_in.uv.x * range * 2);
+	int i1 = i < range ? i : range;
+	int i2 = i > range ? range * 2 - i : range;
+	float p11 = 0.0f;
+	float p12 = 0.0f;
+	float p22 = 0.0f;
+	/* The number of loops is `window` because the size of image is `window + range`.  */
+	do {
+		float a1 = image.Load(int3(i1, 0, 0)).x;
+		float a2 = image.Load(int3(i2, 1, 0)).x;
+		p11 += a1 * a1;
+		p12 += a1 * a2;
+		p22 += a2 * a2;
+		++i1;
+		++i2;
+	} while (i1 < range * 2 && i2 < range * 2);
+
+	/* TODO: If calculating something, return float4(p11, p12, p22, 1.0). */
+	float c = p12 / (sqrt(p11 * p22) + 1.0e-7);
+	return float4(c, c, c, 1.0);
+}
+
+technique DrawCorrelation
+{
+	pass
+	{
+		vertex_shader = VSDefault(vert_in);
+		pixel_shader  = PSDrawCorrelation(vert_in);
+	}
+}
