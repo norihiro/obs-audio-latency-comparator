@@ -10,6 +10,10 @@ This is a simple plugin for OBS Studio that compares latencies of two audio sour
 
 Select audio sources that you want to compare.
 
+### Include Sync Offset
+
+By enabling this option, the `Sync Offset` configured at `Advanced Audio Properties` will be added.
+
 ### Window
 
 Window to calculate the correlation of the two specified sources.

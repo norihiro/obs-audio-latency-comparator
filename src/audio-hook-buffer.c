@@ -9,15 +9,18 @@
 #include "audio-hook-buffer.h"
 
 static void audio_callback(void *param, obs_source_t *source, const struct audio_data *audio_data, bool muted);
+static void audio_offset_callback(void *param, calldata_t *data);
 
 static inline void hook_source(struct audio_hook_buffer *ahb, obs_source_t *src)
 {
+	signal_handler_connect(obs_source_get_signal_handler(src), "audio_sync", audio_offset_callback, ahb);
 	obs_source_add_audio_capture_callback(src, audio_callback, ahb);
 }
 
 static inline void unhook_source(struct audio_hook_buffer *ahb, obs_source_t *src)
 {
 	obs_source_remove_audio_capture_callback(src, audio_callback, ahb);
+	signal_handler_disconnect(obs_source_get_signal_handler(src), "audio_sync", audio_offset_callback, ahb);
 }
 
 void ahb_set_source(struct audio_hook_buffer *ahb, const char *name)
@@ -39,6 +42,7 @@ void ahb_set_source(struct audio_hook_buffer *ahb, const char *name)
 		ahb->weak = obs_source_get_weak_source(src);
 
 		hook_source(ahb, src);
+		ahb->sync_offset = obs_source_get_sync_offset(src);
 
 		obs_source_release(src);
 	}
@@ -74,6 +78,15 @@ static void audio_callback(void *param, obs_source_t *source, const struct audio
 	pthread_mutex_lock(&ahb->mutex);
 	circlebuf_push_back(&ahb->buffer, mono, sizeof(float) * audio_data->frames);
 	ahb->last_ts = audio_data->timestamp + frames_ns;
+	pthread_mutex_unlock(&ahb->mutex);
+}
+
+static void audio_offset_callback(void *param, calldata_t *data)
+{
+	struct audio_hook_buffer *ahb = param;
+
+	pthread_mutex_lock(&ahb->mutex);
+	ahb->sync_offset = calldata_int(data, "offset");
 	pthread_mutex_unlock(&ahb->mutex);
 }
 

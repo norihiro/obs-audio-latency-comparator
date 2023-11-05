@@ -10,6 +10,7 @@ struct audio_hook_buffer
 	// context data, need to lock `mutex`
 	struct circlebuf buffer;
 	uint64_t last_ts;
+	int64_t sync_offset;
 
 	pthread_mutex_t mutex;
 };

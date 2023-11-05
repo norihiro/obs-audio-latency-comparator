@@ -33,6 +33,7 @@ struct comparator_s
 	size_t window;
 	size_t range;
 	float decay_s;
+	bool add_sync_offset;
 };
 
 static const char *get_name(void *type_data)
@@ -78,6 +79,8 @@ static obs_properties_t *get_properties(void *data)
 	info.prop = prop;
 	obs_enum_sources(add_sources, &info);
 
+	obs_properties_add_bool(props, "add_sync_offset", obs_module_text("Properties.AddSyncOffset"));
+
 	prop = obs_properties_add_int(props, "window_ms", obs_module_text("Properties.Window"), 1, 1000, 1);
 	obs_property_int_set_suffix(prop, " ms");
 	prop = obs_properties_add_int(props, "range_ms", obs_module_text("Properties.Range"), 1, 1000, 1);
@@ -91,6 +94,7 @@ static obs_properties_t *get_properties(void *data)
 
 static void get_defaults(obs_data_t *settings)
 {
+	obs_data_set_default_bool(settings, "add_sync_offset", true);
 	obs_data_set_default_int(settings, "window_ms", 33);
 	obs_data_set_default_int(settings, "range_ms", 200);
 	obs_data_set_default_double(settings, "decay_s", 1.0);
@@ -124,6 +128,8 @@ static void update(void *data, obs_data_t *settings)
 		s->source2_name = bstrdup(source2_name);
 		ahb_set_source(&s->src2, source2_name);
 	}
+
+	s->add_sync_offset = obs_data_get_bool(settings, "add_sync_offset");
 
 	s->window = ms_to_samples(obs_data_get_int(settings, "window_ms"), 1, 48000);
 	s->range = ms_to_samples(obs_data_get_int(settings, "range_ms"), 1, 48000);
@@ -208,6 +214,10 @@ static inline void copy_to_buffer(struct comparator_s *s)
 	pthread_mutex_lock(&s->src2.mutex);
 
 	int64_t diff_ts = (int64_t)s->src1.last_ts - (int64_t)s->src2.last_ts;
+	if (s->add_sync_offset) {
+		diff_ts += s->src1.sync_offset;
+		diff_ts -= s->src2.sync_offset;
+	}
 	int64_t diff_sample = mul_div_s64(diff_ts, sample_rate, 1000000000);
 
 	ahb_get_buffer_locked(&s->src1, s->buf1, s->window + s->range, diff_sample > 0 ? diff_sample : 0);
