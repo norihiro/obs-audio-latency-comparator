@@ -1,10 +1,12 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
+uniform texture2d image_prev;
 uniform int range;
+uniform float decay;
 
 sampler_state def_sampler {
 	Filter   = Point;
-	AddressU = Repeat;
+	AddressU = Clamp;
 	AddressV = Clamp;
 };
 
@@ -40,9 +42,11 @@ float4 PSDrawCorrelation(VertInOut vert_in) : TARGET
 		++i2;
 	} while (i1 < range * 2 && i2 < range * 2);
 
-	/* TODO: If calculating something, return float4(p11, p12, p22, 1.0). */
-	float c = p12 / (sqrt(p11 * p22) + 1.0e-7);
-	return float4(c, c, c, 1.0);
+	float4 x = float4(p11, p12, p22, 1.0);
+	if (decay > 1.0)
+		return x;
+	else
+		return decay * x + (1.0 - decay) * image_prev.Load(int3(i, 0, 0));
 }
 
 technique DrawCorrelation
@@ -51,5 +55,24 @@ technique DrawCorrelation
 	{
 		vertex_shader = VSDefault(vert_in);
 		pixel_shader  = PSDrawCorrelation(vert_in);
+	}
+}
+
+float4 PSDrawWaveform(VertInOut vert_in) : TARGET
+{
+	float4 a = image.Sample(def_sampler, vert_in.uv);
+	float c = a.y / (sqrt(a.x * a.z) + 1.0e-7);
+	if (c > (1.0 - vert_in.uv.y))
+		return float4(1.0, 1.0, 1.0, 1.0);
+	else
+		return float4(0.0, 0.0, 0.0, 1.0);
+}
+
+technique DrawWaveform
+{
+	pass
+	{
+		vertex_shader = VSDefault(vert_in);
+		pixel_shader  = PSDrawWaveform(vert_in);
 	}
 }

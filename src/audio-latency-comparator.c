@@ -6,6 +6,7 @@
 #include "audio-hook-buffer.h"
 
 #define MAX_DIFF_SAMPLES 24000
+#define PLOT_HEIGHT 128
 
 struct comparator_s
 {
@@ -22,11 +23,16 @@ struct comparator_s
 	gs_texture_t *audio_tex;
 	size_t audio_tex_width;
 
+	gs_texture_t *prev_correlation;
+	gs_texrender_t *correlation_texrender;
+	float video_s;
+
 	// properties
 	char *source1_name;
 	char *source2_name;
 	size_t window;
 	size_t range;
+	float decay_s;
 };
 
 static const char *get_name(void *type_data)
@@ -77,6 +83,9 @@ static obs_properties_t *get_properties(void *data)
 	prop = obs_properties_add_int(props, "range_ms", obs_module_text("Properties.Range"), 1, 1000, 1);
 	obs_property_int_set_suffix(prop, " ms");
 
+	prop = obs_properties_add_float(props, "decay_s", obs_module_text("Properties.Decay"), 0.1, 100.0, 0.1);
+	obs_property_float_set_suffix(prop, " s");
+
 	return props;
 }
 
@@ -84,6 +93,7 @@ static void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "window_ms", 33);
 	obs_data_set_default_int(settings, "range_ms", 200);
+	obs_data_set_default_double(settings, "decay_s", 1.0);
 }
 
 static size_t ms_to_samples(long long ms, size_t min, size_t max)
@@ -117,6 +127,7 @@ static void update(void *data, obs_data_t *settings)
 
 	s->window = ms_to_samples(obs_data_get_int(settings, "window_ms"), 1, 48000);
 	s->range = ms_to_samples(obs_data_get_int(settings, "range_ms"), 1, 48000);
+	s->decay_s = (float)obs_data_get_double(settings, "decay_s");
 }
 
 static void *create(obs_data_t *settings, obs_source_t *source)
@@ -142,6 +153,8 @@ static void destroy(void *data)
 
 	obs_enter_graphics();
 	gs_texture_destroy(s->audio_tex);
+	gs_texrender_destroy(s->correlation_texrender);
+	gs_texture_destroy(s->prev_correlation);
 	obs_leave_graphics();
 
 	bfree(s->source1_name);
@@ -152,8 +165,9 @@ static void destroy(void *data)
 
 static void video_tick(void *data, float seconds)
 {
-	UNUSED_PARAMETER(seconds);
 	struct comparator_s *s = data;
+
+	s->video_s += seconds;
 
 	/* When the source is created at the beginning, it might fail to find the source. */
 	if (s->source1_name && !s->src1.weak)
@@ -221,7 +235,7 @@ static inline void send_audio_buffer(struct comparator_s *s)
 	}
 }
 
-static inline void render_audio_buffer(struct comparator_s *s)
+static inline void calculate_correlation(struct comparator_s *s)
 {
 	if (!s->effect) {
 		char *name = obs_module_file("correlation.effect");
@@ -240,11 +254,62 @@ static inline void render_audio_buffer(struct comparator_s *s)
 	if (s->range < 1)
 		return;
 	size_t width = s->range * 2;
+	bool first = false;
+
+	if (s->prev_correlation && gs_texture_get_width(s->prev_correlation) != width) {
+		gs_texture_destroy(s->prev_correlation);
+		s->prev_correlation = NULL;
+		first = true;
+	}
+	if (!s->prev_correlation)
+		s->prev_correlation = gs_texture_create(width, 1, GS_RGBA32F, 1, NULL, GS_RENDER_TARGET);
+
+	if (!s->correlation_texrender) {
+		s->correlation_texrender = gs_texrender_create(GS_RGBA32F, GS_ZS_NONE);
+		first = true;
+	} else {
+		gs_copy_texture(s->prev_correlation, gs_texrender_get_texture(s->correlation_texrender));
+		gs_texrender_reset(s->correlation_texrender);
+	}
+
+	if (!gs_texrender_begin(s->correlation_texrender, width, 1))
+		return;
+
+	struct vec4 background = {{{0.0f, 0.0f, 0.0f, 0.0f}}};
+	gs_clear(GS_CLEAR_COLOR, &background, 0.0f, 0);
+
+	gs_ortho(0.0f, (float)width, 0.0f, (float)1, -100.0f, 100.0f);
+
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
 
 	gs_effect_set_texture(gs_effect_get_param_by_name(s->effect, "image"), s->audio_tex);
+	gs_effect_set_texture(gs_effect_get_param_by_name(s->effect, "image_prev"), s->prev_correlation);
 	gs_effect_set_int(gs_effect_get_param_by_name(s->effect, "range"), s->range);
+	gs_effect_set_float(gs_effect_get_param_by_name(s->effect, "decay"),
+			    first ? 2.0f : s->video_s / (s->decay_s + s->video_s));
+	s->video_s = 0.0f;
 	while (gs_effect_loop(s->effect, "DrawCorrelation")) {
 		gs_draw_sprite(s->audio_tex, 0, width, 1);
+	}
+
+	gs_blend_state_pop();
+
+	gs_texrender_end(s->correlation_texrender);
+}
+
+static inline void render_audio_buffer(struct comparator_s *s)
+{
+	size_t width = s->range * 2;
+
+	gs_texture_t *tex = gs_texrender_get_texture(s->correlation_texrender);
+	gs_effect_set_int(gs_effect_get_param_by_name(s->effect, "range"), s->range);
+	gs_effect_set_texture(gs_effect_get_param_by_name(s->effect, "image"), tex);
+	gs_effect_set_texture(gs_effect_get_param_by_name(s->effect, "image_prev"), tex);
+	gs_effect_set_float(gs_effect_get_param_by_name(s->effect, "decay"), 0.0f);
+
+	while (gs_effect_loop(s->effect, "DrawWaveform")) {
+		gs_draw_sprite(tex, 0, width, PLOT_HEIGHT);
 	}
 }
 
@@ -256,6 +321,7 @@ static void video_render(void *data, gs_effect_t *effect)
 	prepare_buffer(s);
 	copy_to_buffer(s);
 	send_audio_buffer(s);
+	calculate_correlation(s);
 	render_audio_buffer(s);
 }
 
@@ -268,7 +334,7 @@ static uint32_t get_width(void *data)
 static uint32_t get_height(void *data)
 {
 	UNUSED_PARAMETER(data);
-	return 1;
+	return PLOT_HEIGHT;
 }
 
 const struct obs_source_info audio_latency_comparator = {
