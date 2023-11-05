@@ -30,8 +30,8 @@ struct comparator_s
 	// properties
 	char *source1_name;
 	char *source2_name;
-	size_t window;
-	size_t range;
+	uint32_t window;
+	uint32_t range;
 	float decay_s;
 	bool add_sync_offset;
 };
@@ -131,8 +131,8 @@ static void update(void *data, obs_data_t *settings)
 
 	s->add_sync_offset = obs_data_get_bool(settings, "add_sync_offset");
 
-	s->window = ms_to_samples(obs_data_get_int(settings, "window_ms"), 1, 48000);
-	s->range = ms_to_samples(obs_data_get_int(settings, "range_ms"), 1, 48000);
+	s->window = (uint32_t)ms_to_samples(obs_data_get_int(settings, "window_ms"), 1, 48000);
+	s->range = (uint32_t)ms_to_samples(obs_data_get_int(settings, "range_ms"), 1, 48000);
 	s->decay_s = (float)obs_data_get_double(settings, "decay_s");
 }
 
@@ -229,7 +229,7 @@ static inline void copy_to_buffer(struct comparator_s *s)
 
 static inline void send_audio_buffer(struct comparator_s *s)
 {
-	size_t width = s->window + s->range;
+	uint32_t width = s->window + s->range;
 
 	if (width != s->audio_tex_width) {
 		gs_texture_destroy(s->audio_tex);
@@ -263,7 +263,7 @@ static inline void calculate_correlation(struct comparator_s *s)
 
 	if (s->range < 1)
 		return;
-	size_t width = s->range * 2;
+	uint32_t width = s->range * 2;
 	bool first = false;
 
 	if (s->prev_correlation && gs_texture_get_width(s->prev_correlation) != width) {
@@ -311,7 +311,7 @@ static inline void calculate_correlation(struct comparator_s *s)
 
 static inline void render_audio_buffer(struct comparator_s *s)
 {
-	size_t width = s->range * 2;
+	uint32_t width = s->range * 2;
 
 	gs_texture_t *tex = gs_texrender_get_texture(s->correlation_texrender);
 	gs_effect_set_int(gs_effect_get_param_by_name(s->effect, "range"), s->range);
