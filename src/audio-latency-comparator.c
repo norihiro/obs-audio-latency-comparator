@@ -277,7 +277,8 @@ static inline void calculate_correlation(struct comparator_s *s)
 	if (!s->correlation_texrender) {
 		s->correlation_texrender = gs_texrender_create(GS_RGBA32F, GS_ZS_NONE);
 		first = true;
-	} else {
+	}
+	else {
 		gs_copy_texture(s->prev_correlation, gs_texrender_get_texture(s->correlation_texrender));
 		gs_texrender_reset(s->correlation_texrender);
 	}
