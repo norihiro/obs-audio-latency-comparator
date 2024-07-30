@@ -10,6 +10,7 @@ set(MACOS_BUNDLEID "net.nagater.obs-audio-latency-comparator")
 set(ID_PREFIX "net.nagater.obs-audio-latency-comparator.")
 set(MACOS_PACKAGE_UUID "B95319C8-08C2-4A9F-8129-756C11254BBC")
 set(MACOS_INSTALLER_UUID "A4323033-BEFC-426A-B6FD-D7A3F1F3C605")
+set(PLUGIN_URL "https://github.com/norihiro/obs-audio-latency-comparator") # TODO: Set the URL once released
 
 # Replace `me@contoso.com` with the maintainer email address you want to put in Linux packages
 set(LINUX_MAINTAINER_EMAIL "norihiro@nagater.net")
