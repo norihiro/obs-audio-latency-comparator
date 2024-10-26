@@ -1,4 +1,4 @@
-# OBS Audio Latency Comparator
+# Audio Latency Comparator plugin for OBS Studio
 
 ## Introduction
 
